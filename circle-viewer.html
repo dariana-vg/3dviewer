@@ -423,17 +423,19 @@
                 const deltaX = e.clientX - previousMousePosition.x;
                 const deltaY = e.clientY - previousMousePosition.y;
                 
-                // Horizontal rotation (Y axis) - spinning around vertical axis
+                // Horizontal rotation (Y axis) - spinning around vertical axis (360° rotation allowed)
                 model.rotation.y += deltaX * 0.01;
                 
-                // Vertical rotation (X axis) - tilting up/down
+                // Vertical rotation (X axis) - tilting up/down to see top and bottom
                 // Invert deltaY so dragging down tilts model down (more intuitive)
                 // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
                 if (Math.abs(deltaY) > 0) {
                     const oldRotationX = model.rotation.x;
                     model.rotation.x -= deltaY * 0.015;
-                    // Limit vertical rotation to -90 to +90 degrees to keep model visible
-                    model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                    // Allow full rotation to see top (-120°) and bottom (+120°) of the oven
+                    // This gives users complete view of the product from all angles including top and bottom
+                    const maxRotation = (120 * Math.PI) / 180; // 120 degrees in radians
+                    model.rotation.x = Math.max(-maxRotation, Math.min(maxRotation, model.rotation.x));
                     
                     // Debug: log if rotation actually changed
                     if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
@@ -470,17 +472,19 @@
                 const deltaX = e.touches[0].clientX - previousMousePosition.x;
                 const deltaY = e.touches[0].clientY - previousMousePosition.y;
                 
-                // Horizontal rotation (Y axis) - spinning around vertical axis
+                // Horizontal rotation (Y axis) - spinning around vertical axis (360° rotation allowed)
                 model.rotation.y += deltaX * 0.01;
                 
-                // Vertical rotation (X axis) - tilting up/down
+                // Vertical rotation (X axis) - tilting up/down to see top and bottom
                 // Invert deltaY so dragging down tilts model down (more intuitive)
                 // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
                 if (Math.abs(deltaY) > 0) {
                     const oldRotationX = model.rotation.x;
                     model.rotation.x -= deltaY * 0.015;
-                    // Limit vertical rotation to -90 to +90 degrees to keep model visible
-                    model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                    // Allow full rotation to see top (-120°) and bottom (+120°) of the oven
+                    // This gives users complete view of the product from all angles including top and bottom
+                    const maxRotation = (120 * Math.PI) / 180; // 120 degrees in radians
+                    model.rotation.x = Math.max(-maxRotation, Math.min(maxRotation, model.rotation.x));
                     
                     // Debug: log if rotation actually changed
                     if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
