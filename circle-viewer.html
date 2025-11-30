@@ -1,204 +1,551 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { 
-            margin: 0;
+            margin: 0; 
             overflow: hidden;
             font-family: Arial, sans-serif;
+            background-color: #ffffff;
         }
-        canvas { display: block; }
-        #info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 10px;
-            font-family: Arial;
-            border-radius: 5px;
+        #canvas { 
+            width: 100vw; 
+            height: 100vh; 
+            display: block;
+            touch-action: none;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-size: 16px;
+            z-index: 10000;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 20px 24px;
+            border-radius: 8px;
+            max-width: 85%;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            word-wrap: break-word;
+            line-height: 1.5;
+            margin-top: 0;
         }
     </style>
 </head>
 <body>
-    <div id="info">Loading...</div>
+    <div id="loading">Loading 3D model...</div>
+    <canvas id="canvas"></canvas>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Using local Three.js files from assets/js/ folder via WebViewAssetLoader -->
+    <script src="https://appassets.androidplatform.net/assets/js/three.min.js" onerror="handleScriptError('three.min.js', this.src)"></script>
+    <!-- GLTFLoader from local assets -->
+    <script src="https://appassets.androidplatform.net/assets/js/GLTFLoader.js" onerror="handleScriptError('GLTFLoader.js', this.src)"></script>
     
     <script>
-        let camera, scene, renderer, model;
-        const info = document.getElementById('info');
+        // Error handler for script loading
+        function handleScriptError(scriptName, src) {
+            console.error('Failed to load script:', scriptName, 'from:', src);
+            document.getElementById('loading').textContent = 'Error: Failed to load ' + scriptName + ' from ' + src;
+        }
         
+        // Get model name from URL parameter or use default
+        const urlParams = new URLSearchParams(window.location.search);
+        const modelName = urlParams.get('model') || 'oven';
+        // Load from assets - use https://appassets.androidplatform.net/assets/ path for WebViewAssetLoader
+        // This avoids CORS issues with file:// URLs
+        const modelUrl = `https://appassets.androidplatform.net/assets/models/${modelName}.glb`;
+        
+        let scene, camera, renderer, model;
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
-        
-        init();
-        animate();
+        let animationFrameId = null;
         
         function init() {
-            // Scene
+            // Check if Three.js is loaded
+            if (typeof THREE === 'undefined') {
+                const errorMsg = 'Error: Three.js library failed to load. Check console for details.';
+                document.getElementById('loading').textContent = errorMsg;
+                console.error('Three.js library not loaded');
+                console.error('Current location:', window.location.href);
+                console.error('Base URL:', document.baseURI);
+                return;
+            }
+            
+            // Check if GLTFLoader is available
+            if (typeof THREE.GLTFLoader === 'undefined') {
+                const errorMsg = 'Error: GLTFLoader not found. Make sure GLTFLoader.js loaded correctly.';
+                document.getElementById('loading').textContent = errorMsg;
+                console.error('GLTFLoader not found');
+                return;
+            }
+            
+            // Create scene
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf5f5f5);
+            scene.background = new THREE.Color(0xffffff);
             
-            // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 5;
+            // Setup camera
+            camera = new THREE.PerspectiveCamera(
+                50, 
+                window.innerWidth / window.innerHeight, 
+                0.1, 
+                1000
+            );
+            // Camera position will be set after model loads
             
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            // Setup renderer with better settings for mobile and materials
+            const canvas = document.getElementById('canvas');
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas,
+                antialias: true,
+                alpha: false,
+                powerPreference: "high-performance"
+            });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.body.appendChild(renderer.domElement);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+            // Enable tone mapping for better color reproduction
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputEncoding = THREE.sRGBEncoding;
             
-            // Lights - bright and even
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            // Add better lighting setup to show textures and details
+            // Ambient light - very bright to show base colors and textures
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
             scene.add(ambientLight);
             
-            const light1 = new THREE.DirectionalLight(0xffffff, 0.8);
-            light1.position.set(5, 5, 5);
-            scene.add(light1);
+            // Main directional light from front-right - very bright
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = false;
+            scene.add(directionalLight);
             
-            const light2 = new THREE.DirectionalLight(0xffffff, 0.5);
-            light2.position.set(-5, 3, 5);
-            scene.add(light2);
+            // Fill light from left to reduce harsh shadows
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight2.position.set(-5, 3, 5);
+            scene.add(directionalLight2);
             
-            const light3 = new THREE.DirectionalLight(0xffffff, 0.4);
-            light3.position.set(0, -5, -5);
-            scene.add(light3);
+            // Additional light from top to illuminate top surfaces
+            const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight3.position.set(0, 10, 0);
+            scene.add(directionalLight3);
             
-            // Load model
+            // Back light to show edges and depth
+            const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight4.position.set(0, 0, -10);
+            scene.add(directionalLight4);
+            
+            // Load 3D model
+            console.log('Loading model from URL:', modelUrl);
+            
+            // Suppress ProgressEvent.url errors that occur with WebView asset loading
+            const originalConsoleError = console.error;
+            console.error = function(...args) {
+                // Filter out ProgressEvent.url errors
+                const message = args.join(' ');
+                if (message.includes('progressevent') && message.includes('url')) {
+                    console.debug('Suppressed ProgressEvent.url error:', ...args);
+                    return;
+                }
+                originalConsoleError.apply(console, args);
+            };
+            
             const loader = new THREE.GLTFLoader();
             
-            info.textContent = 'Loading model...';
-            console.log('Starting to load model...');
+            // Configure loader manager to handle WebView asset loading
+            loader.manager.onProgress = function(item, loaded, total) {
+                if (total > 0) {
+                    const progress = Math.round((loaded / total) * 100);
+                    document.getElementById('loading').textContent = `Loading ${progress}%...`;
+                }
+            };
             
-            loader.load(
-                './models/oven.glb',
+            loader.manager.onError = function(url) {
+                console.error('Loader manager error for:', url);
+            };
+            
+            try {
+                loader.load(
+                modelUrl,
                 function(gltf) {
-                    console.log('Model loaded successfully!');
+                    console.log('Model loaded successfully!', gltf);
+                    console.log('GLTF scene:', gltf.scene);
+                    console.log('GLTF animations:', gltf.animations);
+                    
+                    if (!gltf || !gltf.scene) {
+                        console.error('Invalid GLTF data received');
+                        document.getElementById('loading').textContent = 'Error: Invalid model data';
+                        document.getElementById('loading').style.color = '#ff0000';
+                        return;
+                    }
+                    
                     model = gltf.scene;
                     
-                    // Get size and center
+                    // Traverse the model and ensure materials/textures are properly set up
+                    model.traverse(function(child) {
+                        if (child.isMesh) {
+                            // Ensure materials are visible and properly lit
+                            if (child.material) {
+                                // Handle both single materials and arrays
+                                const materials = Array.isArray(child.material) 
+                                    ? child.material 
+                                    : [child.material];
+                                
+                                materials.forEach(material => {
+                                    if (material) {
+                                        console.log('Material type:', material.type);
+                                        console.log('Material:', material);
+                                        
+                                        // Check for textures
+                                        if (material.map) {
+                                            console.log('Diffuse texture found:', material.map);
+                                            material.map.needsUpdate = true;
+                                        }
+                                        if (material.normalMap) {
+                                            console.log('Normal map found:', material.normalMap);
+                                            material.normalMap.needsUpdate = true;
+                                        }
+                                        if (material.roughnessMap) {
+                                            console.log('Roughness map found:', material.roughnessMap);
+                                            material.roughnessMap.needsUpdate = true;
+                                        }
+                                        if (material.metalnessMap) {
+                                            console.log('Metalness map found:', material.metalnessMap);
+                                            material.metalnessMap.needsUpdate = true;
+                                        }
+                                        
+                                        // Ensure material uses proper lighting
+                                        material.needsUpdate = true;
+                                        
+                                        // If it's a basic material, convert to standard for better lighting
+                                        if (material.type === 'MeshBasicMaterial') {
+                                            console.log('Converting MeshBasicMaterial to MeshStandardMaterial');
+                                            const newMaterial = new THREE.MeshStandardMaterial({
+                                                color: material.color,
+                                                map: material.map,
+                                                normalMap: material.normalMap,
+                                                roughness: material.roughness !== undefined ? material.roughness : 0.7,
+                                                metalness: material.metalness !== undefined ? material.metalness : 0.3,
+                                                envMap: material.envMap
+                                            });
+                                            child.material = newMaterial;
+                                        }
+                                        
+                                        // Ensure material properties are set for visibility
+                                        if (material.color) {
+                                            console.log('Material color:', material.color);
+                                            // Ensure color is not too dark
+                                            if (material.color.r < 0.1 && material.color.g < 0.1 && material.color.b < 0.1) {
+                                                console.warn('Material appears very dark, adjusting...');
+                                                material.color.setRGB(0.3, 0.3, 0.3); // Set to grey if too dark
+                                            }
+                                        }
+                                        
+                                        // Ensure roughness and metalness are set for PBR materials
+                                        if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
+                                            if (material.roughness === undefined) material.roughness = 0.7;
+                                            if (material.metalness === undefined) material.metalness = 0.3;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    
+                    // Calculate bounding box
                     const box = new THREE.Box3().setFromObject(model);
-                    const size = box.getSize(new THREE.Vector3());
                     const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    
+                    console.log('Bounding box:', box);
+                    console.log('Center:', center);
+                    console.log('Size:', size);
+                    
+                    // Check if model has valid size
+                    if (size.x === 0 && size.y === 0 && size.z === 0) {
+                        console.warn('Model has zero size, may be invisible');
+                        // Try to make model visible anyway
+                        model.visible = true;
+                        model.traverse(function(child) {
+                            if (child.isMesh) {
+                                child.visible = true;
+                            }
+                        });
+                    }
+                    
+                    // Center the model at origin
+                    model.position.x = -center.x;
+                    model.position.y = -center.y;
+                    model.position.z = -center.z;
+                    
+                    // Ensure model is visible
+                    model.visible = true;
+                    
+                    // Reset rotation to ensure model appears straight/centered
+                    model.rotation.x = 0;
+                    model.rotation.y = 0;
+                    model.rotation.z = 0;
+                    
+                    // Calculate the maximum dimension
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    
+                    // Calculate diagonal distance (for when model rotates)
+                    const diagonal = Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z);
+                    
+                    // Use the larger of max dimension or diagonal to ensure it fits when rotating
+                    const modelSize = Math.max(maxDim, diagonal * 0.7);
+                    
+                    // Calculate camera distance to fit the model
+                    // Using a fov of 50 degrees, we need to calculate distance
+                    const fov = camera.fov * (Math.PI / 180);
+                    const distance = (modelSize / 2) / Math.tan(fov / 2);
+                    
+                    // Add more padding (2.5x) so model doesn't touch edges when rotating
+                    const cameraDistance = distance * 2.5;
+                    
+                    // Position camera to look at the model
+                    camera.position.set(0, 0, cameraDistance);
+                    camera.lookAt(0, 0, 0);
                     
                     console.log('Model size:', size);
                     console.log('Model center:', center);
-                    
-                    // Center the model
-                    model.position.sub(center);
-                    
-                    // Scale to fit nicely
-                    const maxSize = Math.max(size.x, size.y, size.z);
-                    const scale = 3 / maxSize;
-                    model.scale.multiplyScalar(scale);
-                    
-                    console.log('Scale applied:', scale);
+                    console.log('Camera distance:', cameraDistance);
                     
                     scene.add(model);
                     
-                    info.textContent = 'Drag to rotate freely';
-                    console.log('Model added to scene');
+                    // Hide loading message
+                    const loadingElement = document.getElementById('loading');
+                    if (loadingElement) {
+                        loadingElement.style.display = 'none';
+                    }
+                    
+                    console.log('3D model added to scene');
+                    console.log('Scene children:', scene.children.length);
+                    console.log('Model visible:', model.visible);
+                    
+                    // Render once to show the model
+                    renderer.render(scene, camera);
+                    console.log('Initial render complete');
                 },
-                function(xhr) {
-                    const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                    info.textContent = `Loading: ${percent}%`;
-                    console.log('Loading:', percent + '%');
+                // Progress callback - handle gracefully to avoid errors
+                function(progress) {
+                    // Silently handle progress - don't try to access properties that might not exist
+                    try {
+                        // Only update if we have valid progress info
+                        if (progress && typeof progress === 'object') {
+                            // Try to get progress info, but don't fail if it's not available
+                            if (progress.loaded !== undefined && progress.total !== undefined && progress.total > 0) {
+                                const percent = Math.round((progress.loaded / progress.total) * 100);
+                                document.getElementById('loading').textContent = `Loading ${percent}%...`;
+                                console.log('Loading progress:', percent + '%');
+                                
+                                // If we reach 100%, wait a moment then check if model loaded
+                                if (percent >= 100) {
+                                    setTimeout(function() {
+                                        if (document.getElementById('loading').style.display !== 'none') {
+                                            console.warn('Still showing loading at 100%, model may not have loaded');
+                                            document.getElementById('loading').textContent = 'Processing model...';
+                                        }
+                                    }, 1000);
+                                }
+                                return;
+                            }
+                        }
+                        // If we can't determine progress, just show generic message
+                        document.getElementById('loading').textContent = 'Loading model...';
+                    } catch (e) {
+                        // Silently ignore progress errors - they're not critical
+                        console.debug('Progress update skipped:', e);
+                    }
                 },
                 function(error) {
-                    info.textContent = 'ERROR loading model';
-                    info.style.color = 'red';
                     console.error('Error loading model:', error);
+                    console.error('Model URL was:', modelUrl);
+                    console.error('Error type:', typeof error);
+                    console.error('Error details:', error);
+                    
+                    let errorMsg = 'Unknown error';
+                    if (error) {
+                        if (error.message) {
+                            errorMsg = error.message;
+                        } else if (typeof error === 'string') {
+                            errorMsg = error;
+                        } else if (error.toString) {
+                            errorMsg = error.toString();
+                        }
+                    }
+                    
+                    document.getElementById('loading').textContent = `Error: ${errorMsg}. URL: ${modelUrl}`;
+                    document.getElementById('loading').style.color = '#ff0000';
                 }
-            );
+                );
+            } catch (e) {
+                console.error('Error in loader.load:', e);
+                document.getElementById('loading').textContent = 'Error loading model: ' + (e.message || e.toString());
+                document.getElementById('loading').style.color = '#ff0000';
+            } finally {
+                // Restore original console.error
+                console.error = originalConsoleError;
+            }
             
-            // Mouse controls - FREE ROTATION
-            renderer.domElement.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                previousMousePosition = { x: e.clientX, y: e.clientY };
-                console.log('Mouse down - start dragging');
-            });
+            // Add interaction controls
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseup', onMouseUp);
+            canvas.addEventListener('mouseleave', onMouseUp);
+            canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+            canvas.addEventListener('touchend', onTouchEnd);
+            window.addEventListener('resize', onWindowResize);
             
-            renderer.domElement.addEventListener('mousemove', (e) => {
-                if (isDragging && model) {
-                    const deltaX = e.clientX - previousMousePosition.x;
-                    const deltaY = e.clientY - previousMousePosition.y;
-                    
-                    // FREE ROTATION - NO LIMITS
-                    model.rotation.y += deltaX * 0.01;
-                    model.rotation.x += deltaY * 0.01;
-                    
-                    console.log('Rotating - X:', model.rotation.x.toFixed(2), 'Y:', model.rotation.y.toFixed(2));
-                    
-                    previousMousePosition = { x: e.clientX, y: e.clientY };
-                }
-            });
-            
-            renderer.domElement.addEventListener('mouseup', () => {
-                isDragging = false;
-                console.log('Mouse up - stop dragging');
-            });
-            
-            renderer.domElement.addEventListener('mouseleave', () => {
-                isDragging = false;
-            });
-            
-            // Touch controls - FREE ROTATION
-            renderer.domElement.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 1) {
-                    isDragging = true;
-                    previousMousePosition = {
-                        x: e.touches[0].clientX,
-                        y: e.touches[0].clientY
-                    };
-                    console.log('Touch start');
-                    e.preventDefault();
-                }
-            }, { passive: false });
-            
-            renderer.domElement.addEventListener('touchmove', (e) => {
-                if (isDragging && model && e.touches.length === 1) {
-                    const deltaX = e.touches[0].clientX - previousMousePosition.x;
-                    const deltaY = e.touches[0].clientY - previousMousePosition.y;
-                    
-                    // FREE ROTATION - NO LIMITS
-                    model.rotation.y += deltaX * 0.01;
-                    model.rotation.x += deltaY * 0.01;
-                    
-                    console.log('Touch rotating - X:', model.rotation.x.toFixed(2), 'Y:', model.rotation.y.toFixed(2));
-                    
-                    previousMousePosition = {
-                        x: e.touches[0].clientX,
-                        y: e.touches[0].clientY
-                    };
-                    e.preventDefault();
-                }
-            }, { passive: false });
-            
-            renderer.domElement.addEventListener('touchend', () => {
-                isDragging = false;
-                console.log('Touch end');
-            });
-            
-            // Window resize
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
+            // Start animation loop (no auto-rotation for MVP)
+            animate();
         }
         
         function animate() {
-            requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
             
-            // No auto-rotation - stays centered
-            // User can drag to rotate freely in ANY direction
-            
+            // No auto-rotation - model stays static and centered
+            // Only render (model can still be rotated by user dragging)
             renderer.render(scene, camera);
+        }
+        
+        function onMouseDown(e) {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+            e.preventDefault();
+        }
+        
+        function onMouseMove(e) {
+            if (isDragging && model) {
+                // Allow both horizontal (Y axis) and vertical (X axis) rotation
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                
+                // Horizontal rotation (Y axis) - spinning around vertical axis (360° rotation allowed)
+                model.rotation.y += deltaX * 0.01;
+                
+                // Vertical rotation (X axis) - tilting up/down to see top and bottom
+                // Invert deltaY so dragging down tilts model down (more intuitive)
+                // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
+                if (Math.abs(deltaY) > 0) {
+                    const oldRotationX = model.rotation.x;
+                    model.rotation.x -= deltaY * 0.015;
+                    // Allow full rotation to see top (-120°) and bottom (+120°) of the oven
+                    // This gives users complete view of the product from all angles including top and bottom
+                    const maxRotation = (120 * Math.PI) / 180; // 120 degrees in radians
+                    model.rotation.x = Math.max(-maxRotation, Math.min(maxRotation, model.rotation.x));
+                    
+                    // Debug: log if rotation actually changed
+                    if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
+                        console.log('Vertical rotation applied - X:', model.rotation.x.toFixed(3), 'deltaY:', deltaY.toFixed(2));
+                    }
+                }
+                
+                // Keep Z rotation at 0 to prevent unwanted tilting
+                model.rotation.z = 0;
+                
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+            e.preventDefault();
+        }
+        
+        function onMouseUp() {
+            isDragging = false;
+        }
+        
+        function onTouchStart(e) {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                previousMousePosition = { 
+                    x: e.touches[0].clientX, 
+                    y: e.touches[0].clientY 
+                };
+                e.preventDefault();
+            }
+        }
+        
+        function onTouchMove(e) {
+            if (isDragging && model && e.touches.length === 1) {
+                // Allow both horizontal (Y axis) and vertical (X axis) rotation
+                const deltaX = e.touches[0].clientX - previousMousePosition.x;
+                const deltaY = e.touches[0].clientY - previousMousePosition.y;
+                
+                // Horizontal rotation (Y axis) - spinning around vertical axis (360° rotation allowed)
+                model.rotation.y += deltaX * 0.01;
+                
+                // Vertical rotation (X axis) - tilting up/down to see top and bottom
+                // Invert deltaY so dragging down tilts model down (more intuitive)
+                // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
+                if (Math.abs(deltaY) > 0) {
+                    const oldRotationX = model.rotation.x;
+                    model.rotation.x -= deltaY * 0.015;
+                    // Allow full rotation to see top (-120°) and bottom (+120°) of the oven
+                    // This gives users complete view of the product from all angles including top and bottom
+                    const maxRotation = (120 * Math.PI) / 180; // 120 degrees in radians
+                    model.rotation.x = Math.max(-maxRotation, Math.min(maxRotation, model.rotation.x));
+                    
+                    // Debug: log if rotation actually changed
+                    if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
+                        console.log('Touch vertical rotation applied - X:', model.rotation.x.toFixed(3), 'deltaY:', deltaY.toFixed(2));
+                    }
+                }
+                
+                // Keep Z rotation at 0 to prevent unwanted tilting
+                model.rotation.z = 0;
+                
+                previousMousePosition = { 
+                    x: e.touches[0].clientX, 
+                    y: e.touches[0].clientY 
+                };
+                e.preventDefault();
+            }
+        }
+        
+        function onTouchEnd() {
+            isDragging = false;
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+        });
+        
+        // Wait for scripts to load before initializing
+        function waitForThreeJS(callback, maxAttempts = 50) {
+            let attempts = 0;
+            const checkInterval = setInterval(function() {
+                attempts++;
+                if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined') {
+                    clearInterval(checkInterval);
+                    callback();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    document.getElementById('loading').textContent = 
+                        'Error: Three.js failed to load after ' + maxAttempts + ' attempts. ' +
+                        'THREE defined: ' + (typeof THREE !== 'undefined') + ', ' +
+                        'GLTFLoader defined: ' + (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined');
+                    console.error('Three.js loading timeout');
+                }
+            }, 100);
+        }
+        
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                waitForThreeJS(init);
+            });
+        } else {
+            waitForThreeJS(init);
         }
     </script>
 </body>
