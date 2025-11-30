@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #canvas { 
+            width: 100vw; 
+            height: 100vh; 
+            display: block;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading 3D model...</div>
+    <canvas id="canvas"></canvas>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <script>
+        // Get model name from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const modelName = urlParams.get('model') || 'oven';
+        const modelUrl = `./models/${modelName}.glb`;
+        
+        let scene, camera, renderer, model;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            
+            // Setup camera
+            camera = new THREE.PerspectiveCamera(
+                50, 
+                window.innerWidth / window.innerHeight, 
+                0.1, 
+                1000
+            );
+            // Camera position will be set after model loads
+            
+            // Setup renderer with better settings for materials and textures
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('canvas'),
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            // Enable tone mapping for better color reproduction
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            
+            // Add better lighting setup to show textures and details
+            // Ambient light - very bright to show base colors and textures
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            scene.add(ambientLight);
+            
+            // Main directional light from front-right - very bright
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = false;
+            scene.add(directionalLight);
+            
+            // Fill light from left to reduce harsh shadows
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight2.position.set(-5, 3, 5);
+            scene.add(directionalLight2);
+            
+            // Additional light from top to illuminate top surfaces
+            const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight3.position.set(0, 10, 0);
+            scene.add(directionalLight3);
+            
+            // Back light to show edges and depth
+            const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight4.position.set(0, 0, -10);
+            scene.add(directionalLight4);
+            
+            // Load 3D model
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                modelUrl,
+                function(gltf) {
+                    model = gltf.scene;
+                    
+                    // Traverse the model and ensure materials/textures are properly set up
+                    model.traverse(function(child) {
+                        if (child.isMesh) {
+                            // Ensure materials are visible and properly lit
+                            if (child.material) {
+                                // Handle both single materials and arrays
+                                const materials = Array.isArray(child.material) 
+                                    ? child.material 
+                                    : [child.material];
+                                
+                                materials.forEach(material => {
+                                    if (material) {
+                                        console.log('Material type:', material.type);
+                                        console.log('Material:', material);
+                                        
+                                        // Check for textures
+                                        if (material.map) {
+                                            console.log('Diffuse texture found:', material.map);
+                                            material.map.needsUpdate = true;
+                                        }
+                                        if (material.normalMap) {
+                                            console.log('Normal map found:', material.normalMap);
+                                            material.normalMap.needsUpdate = true;
+                                        }
+                                        if (material.roughnessMap) {
+                                            console.log('Roughness map found:', material.roughnessMap);
+                                            material.roughnessMap.needsUpdate = true;
+                                        }
+                                        if (material.metalnessMap) {
+                                            console.log('Metalness map found:', material.metalnessMap);
+                                            material.metalnessMap.needsUpdate = true;
+                                        }
+                                        
+                                        // Ensure material uses proper lighting
+                                        material.needsUpdate = true;
+                                        
+                                        // If it's a basic material, convert to standard for better lighting
+                                        if (material.type === 'MeshBasicMaterial') {
+                                            console.log('Converting MeshBasicMaterial to MeshStandardMaterial');
+                                            const newMaterial = new THREE.MeshStandardMaterial({
+                                                color: material.color,
+                                                map: material.map,
+                                                normalMap: material.normalMap,
+                                                roughness: material.roughness !== undefined ? material.roughness : 0.7,
+                                                metalness: material.metalness !== undefined ? material.metalness : 0.3,
+                                                envMap: material.envMap
+                                            });
+                                            child.material = newMaterial;
+                                        }
+                                        
+                                        // Ensure material properties are set for visibility
+                                        if (material.color) {
+                                            console.log('Material color:', material.color);
+                                            // Ensure color is not too dark
+                                            if (material.color.r < 0.1 && material.color.g < 0.1 && material.color.b < 0.1) {
+                                                console.warn('Material appears very dark, adjusting...');
+                                                material.color.setRGB(0.3, 0.3, 0.3); // Set to grey if too dark
+                                            }
+                                        }
+                                        
+                                        // Ensure roughness and metalness are set for PBR materials
+                                        if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
+                                            if (material.roughness === undefined) material.roughness = 0.7;
+                                            if (material.metalness === undefined) material.metalness = 0.3;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    
+                    // Calculate bounding box
+                    const box = new THREE.Box3().setFromObject(model);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    
+                    // Center the model at origin
+                    model.position.x = -center.x;
+                    model.position.y = -center.y;
+                    model.position.z = -center.z;
+                    
+                    // Reset rotation to ensure model appears straight/centered
+                    model.rotation.x = 0;
+                    model.rotation.y = 0;
+                    model.rotation.z = 0;
+                    
+                    // Calculate the maximum dimension
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    
+                    // Calculate diagonal distance (for when model rotates)
+                    const diagonal = Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z);
+                    
+                    // Use the larger of max dimension or diagonal to ensure it fits when rotating
+                    const modelSize = Math.max(maxDim, diagonal * 0.7);
+                    
+                    // Calculate camera distance to fit the model
+                    // Using a fov of 50 degrees, we need to calculate distance
+                    const fov = camera.fov * (Math.PI / 180);
+                    const distance = (modelSize / 2) / Math.tan(fov / 2);
+                    
+                    // Add more padding (2.5x) so model doesn't touch edges when rotating
+                    const cameraDistance = distance * 2.5;
+                    
+                    // Position camera to look at the model
+                    camera.position.set(0, 0, cameraDistance);
+                    camera.lookAt(0, 0, 0);
+                    
+                    console.log('Model size:', size);
+                    console.log('Model center:', center);
+                    console.log('Camera distance:', cameraDistance);
+                    
+                    scene.add(model);
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    // Render once to show the model
+                    renderer.render(scene, camera);
+                },
+                function(xhr) {
+                    const progress = Math.round(xhr.loaded / xhr.total * 100);
+                    document.getElementById('loading').textContent = `Loading ${progress}%...`;
+                },
+                function(error) {
+                    console.error('Error loading model:', error);
+                    document.getElementById('loading').textContent = 'Error loading model';
+                }
+            );
+            
+            // Add interaction controls
+            const canvas = document.getElementById('canvas');
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseup', onMouseUp);
+            canvas.addEventListener('mouseleave', onMouseUp);
+            canvas.addEventListener('touchstart', onTouchStart);
+            canvas.addEventListener('touchmove', onTouchMove);
+            canvas.addEventListener('touchend', onTouchEnd);
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop (no auto-rotation for MVP)
+            animate();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // No auto-rotation - model stays static and centered
+            // Only render (model can still be rotated by user dragging)
+            renderer.render(scene, camera);
+        }
+        
+        function onMouseDown(e) {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
+        
+        function onMouseMove(e) {
+            if (isDragging && model) {
+                // Only allow horizontal rotation (Y axis) - like spinning a product on a stand
+                const deltaX = e.clientX - previousMousePosition.x;
+                model.rotation.y += deltaX * 0.01;
+                // Keep X and Z rotation at 0 to maintain level display
+                model.rotation.x = 0;
+                model.rotation.z = 0;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        }
+        
+        function onMouseUp() {
+            isDragging = false;
+        }
+        
+        function onTouchStart(e) {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                previousMousePosition = { 
+                    x: e.touches[0].clientX, 
+                    y: e.touches[0].clientY 
+                };
+            }
+        }
+        
+        function onTouchMove(e) {
+            if (isDragging && model && e.touches.length === 1) {
+                // Only allow horizontal rotation (Y axis) - like spinning a product on a stand
+                const deltaX = e.touches[0].clientX - previousMousePosition.x;
+                model.rotation.y += deltaX * 0.01;
+                // Keep X and Z rotation at 0 to maintain level display
+                model.rotation.x = 0;
+                model.rotation.z = 0;
+                previousMousePosition = { 
+                    x: e.touches[0].clientX, 
+                    y: e.touches[0].clientY 
+                };
+            }
+        }
+        
+        function onTouchEnd() {
+            isDragging = false;
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
