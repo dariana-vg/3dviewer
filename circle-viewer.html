@@ -53,7 +53,7 @@
         
         // Get model name from URL parameter or use default
         const urlParams = new URLSearchParams(window.location.search);
-        const modelName = urlParams.get('model') || 'oven';
+        const modelName = urlParams.get('model') || 'chicken_meal';
         // Load from assets - use https://appassets.androidplatform.net/assets/ path for WebViewAssetLoader
         // This avoids CORS issues with file:// URLs
         const modelUrl = `https://appassets.androidplatform.net/assets/models/${modelName}.glb`;
