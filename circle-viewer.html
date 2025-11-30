@@ -426,10 +426,20 @@
                 // Horizontal rotation (Y axis) - spinning around vertical axis
                 model.rotation.y += deltaX * 0.01;
                 
-                // Vertical rotation (X axis) - tilting up/down, limited to prevent over-rotation
-                model.rotation.x += deltaY * 0.01;
-                // Limit vertical rotation to -90 to +90 degrees to keep model visible
-                model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                // Vertical rotation (X axis) - tilting up/down
+                // Invert deltaY so dragging down tilts model down (more intuitive)
+                // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
+                if (Math.abs(deltaY) > 0) {
+                    const oldRotationX = model.rotation.x;
+                    model.rotation.x -= deltaY * 0.015;
+                    // Limit vertical rotation to -90 to +90 degrees to keep model visible
+                    model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                    
+                    // Debug: log if rotation actually changed
+                    if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
+                        console.log('Vertical rotation applied - X:', model.rotation.x.toFixed(3), 'deltaY:', deltaY.toFixed(2));
+                    }
+                }
                 
                 // Keep Z rotation at 0 to prevent unwanted tilting
                 model.rotation.z = 0;
@@ -463,10 +473,20 @@
                 // Horizontal rotation (Y axis) - spinning around vertical axis
                 model.rotation.y += deltaX * 0.01;
                 
-                // Vertical rotation (X axis) - tilting up/down, limited to prevent over-rotation
-                model.rotation.x += deltaY * 0.01;
-                // Limit vertical rotation to -90 to +90 degrees to keep model visible
-                model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                // Vertical rotation (X axis) - tilting up/down
+                // Invert deltaY so dragging down tilts model down (more intuitive)
+                // Increased sensitivity (0.015 instead of 0.01) for better responsiveness
+                if (Math.abs(deltaY) > 0) {
+                    const oldRotationX = model.rotation.x;
+                    model.rotation.x -= deltaY * 0.015;
+                    // Limit vertical rotation to -90 to +90 degrees to keep model visible
+                    model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                    
+                    // Debug: log if rotation actually changed
+                    if (Math.abs(oldRotationX - model.rotation.x) > 0.001) {
+                        console.log('Touch vertical rotation applied - X:', model.rotation.x.toFixed(3), 'deltaY:', deltaY.toFixed(2));
+                    }
+                }
                 
                 // Keep Z rotation at 0 to prevent unwanted tilting
                 model.rotation.z = 0;
