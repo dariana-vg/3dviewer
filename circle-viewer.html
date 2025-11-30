@@ -419,12 +419,21 @@
         
         function onMouseMove(e) {
             if (isDragging && model) {
-                // Only allow horizontal rotation (Y axis) - like spinning a product on a stand
+                // Allow both horizontal (Y axis) and vertical (X axis) rotation
                 const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                
+                // Horizontal rotation (Y axis) - spinning around vertical axis
                 model.rotation.y += deltaX * 0.01;
-                // Keep X and Z rotation at 0 to maintain level display
-                model.rotation.x = 0;
+                
+                // Vertical rotation (X axis) - tilting up/down, limited to prevent over-rotation
+                model.rotation.x += deltaY * 0.01;
+                // Limit vertical rotation to -90 to +90 degrees to keep model visible
+                model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                
+                // Keep Z rotation at 0 to prevent unwanted tilting
                 model.rotation.z = 0;
+                
                 previousMousePosition = { x: e.clientX, y: e.clientY };
             }
             e.preventDefault();
@@ -447,12 +456,21 @@
         
         function onTouchMove(e) {
             if (isDragging && model && e.touches.length === 1) {
-                // Only allow horizontal rotation (Y axis) - like spinning a product on a stand
+                // Allow both horizontal (Y axis) and vertical (X axis) rotation
                 const deltaX = e.touches[0].clientX - previousMousePosition.x;
+                const deltaY = e.touches[0].clientY - previousMousePosition.y;
+                
+                // Horizontal rotation (Y axis) - spinning around vertical axis
                 model.rotation.y += deltaX * 0.01;
-                // Keep X and Z rotation at 0 to maintain level display
-                model.rotation.x = 0;
+                
+                // Vertical rotation (X axis) - tilting up/down, limited to prevent over-rotation
+                model.rotation.x += deltaY * 0.01;
+                // Limit vertical rotation to -90 to +90 degrees to keep model visible
+                model.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, model.rotation.x));
+                
+                // Keep Z rotation at 0 to prevent unwanted tilting
                 model.rotation.z = 0;
+                
                 previousMousePosition = { 
                     x: e.touches[0].clientX, 
                     y: e.touches[0].clientY 
